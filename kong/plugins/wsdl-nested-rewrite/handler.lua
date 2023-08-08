@@ -19,7 +19,7 @@ function plugin:access(plugin_conf)
         kong.log.info("newPath: " .. newPath)
 
     end
-    kong.service.request.set_header("accept-encoding", "gzip;q=0")
+    --kong.service.request.set_header("accept-encoding", "gzip;q=0")
 end
 
 -- this will only check if there is a cached version - otherwise the actual work will be later done on response phase
@@ -46,6 +46,7 @@ function plugin:body_filter(plugin_conf)
         ttl = plugin_conf.cache_ttl
     }
     local body = kong.response.get_raw_body()
+
     if body == nil then
         kong.log("Abbruch")
         return
@@ -118,7 +119,7 @@ function rewrite_wsdl(plugin_conf, body)
             local baseOrigLocation = ngx.encode_base64(namespacePath)
             kong.log("encrypted " .. baseOrigLocation)
 
-            if string.find(kong.request.get_path(), "/namespace/") then
+            if string.find(kong.request.get_path(), "*.xsd") then
                 local rawPath = kong.request.get_raw_path()
                 local startIndex, endIndex = rawPath:find(searchString)
                 local newNamespacePath = rawPath:sub(0, endIndex)
@@ -184,7 +185,7 @@ function update_children(conf, entries)
         local res, err = httpc:request_uri("http://localhost:8000/empty", {
             method = "GET",
             headers = {
-                ["accept-encoding"] = "gzip;q=0"
+               -- ["accept-encoding"] = "gzip;q=0"
             },
             query = {},
             keepalive_timeout = 60,
