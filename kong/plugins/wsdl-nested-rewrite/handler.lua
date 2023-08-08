@@ -19,7 +19,7 @@ function plugin:access(plugin_conf)
         kong.log.info("newPath: " .. newPath)
 
     end
-    kong.service.request.set_header("accept-encoding", "gzip;q=0")
+   -- kong.service.request.set_header("accept-encoding", "gzip;q=0")
 end
 
 -- this will only check if there is a cached version - otherwise the actual work will be later done on response phase
@@ -184,7 +184,7 @@ function update_children(conf, entries)
         local res, err = httpc:request_uri("http://localhost:8000/empty", {
             method = "GET",
             headers = {
-                ["accept-encoding"] = "gzip;q=0"
+                --["accept-encoding"] = "gzip;q=0"
             },
             query = {},
             keepalive_timeout = 60,
