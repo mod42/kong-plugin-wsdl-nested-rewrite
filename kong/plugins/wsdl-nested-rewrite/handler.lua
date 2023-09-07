@@ -11,9 +11,21 @@ function plugin:access(plugin_conf)
     local originalReqPath = kong.request.get_path()
     local arg = kong.request.get_query_arg("orig")
 
+    kong.service.request.clear_header("Accept-Encoding")
+
     if arg then
         local newPath = ngx.decode_base64(arg)
-        -- original endpoint is base64 encoded in the URL
+        -- original endpoint is base64 encoded in the URL (?:https?:\/\/)? (?:[^?\/\s]+[?\/]) (.*)
+        kong.log.debug("arg " .. newPath)
+        local searchString = "(https?:%/%/)([^?%/]+)(.*)"
+        local match1, match2, newPath = newPath:match(searchString)
+        if match1 then
+            kong.log.debug("match 1 " .. match1)
+        end
+        if match2 then
+           kong.log.debug("match 2 " .. match2)
+        end
+        kong.log.debug("newPath " .. newPath)
         kong.service.request.set_path(newPath)
         kong.service.request.set_raw_query("")
         kong.log.info("newPath: " .. newPath)
@@ -89,6 +101,8 @@ function rewrite_wsdl(plugin_conf, body)
     local str = require "resty.string"
     -- Parses XML
     if body then
+        
+        kong.log.debug("body " .. body)
         local soapMessage = xmlua.XML.parse(body)
         -- Find all <xsd:import> elements using the xpath expression
         local xsd_import_elements = soapMessage:search("//xsd:import", namespaces)
@@ -104,42 +118,56 @@ function rewrite_wsdl(plugin_conf, body)
 
         -- Loop over each <xsd:import> element
         for _, xsd_import_element in ipairs(xsd_import_elements) do
+
             local namespace = xsd_import_element:get_attribute("namespace")
             local schemaLocation = xsd_import_element:get_attribute("schemaLocation")
-            kong.log("start with: " .. namespace)
-            kong.log.debug("Namespace: " .. namespace)
+            if namespace ~= null then
+                kong.log("start with: " .. namespace)
+                kong.log.debug("Namespace: " .. namespace)
+            end
+            
             kong.log.debug("Schema Location:" .. schemaLocation)
-            local searchString = "/namespace/"
-            local startIndex, endIndex = namespace:find(searchString)
-            local namespace_name = namespace:sub(endIndex + 1)
-            local ServiceStart = schemaLocation:find("/service")
-            local namespacePath = schemaLocation:sub(ServiceStart)
-            -- store the original endpoint in a query parameter
-            local baseOrigLocation = ngx.encode_base64(namespacePath)
+            -- search for xsd name
+            -- local searchString = "/namespace/"
+            -- local startIndex, endIndex = namespace:find(searchString)
+            -- local namespace_name = namespace:sub(endIndex + 1)
+            
+            -- local ServiceStart = schemaLocation:find("/service")
+            -- local namespacePath = schemaLocation:sub(ServiceStart)
+            -- -- store the original endpoint in a query parameter
+
+            local baseOrigLocation = ngx.encode_base64(schemaLocation)
             kong.log("encrypted " .. baseOrigLocation)
 
-            if string.find(kong.request.get_path(), "/namespace/") then
+            --if string.find(kong.request.get_path(), "/namespace/") then
+
+
+                local searchString = ".*%/(.*%.xsd)"
+                local xsdName = schemaLocation:match(searchString)
+--                kong.log.debug(" end: "..endIndex)
+                --local newNamespacePath = rawPath:sub(0, endIndex)
                 local rawPath = kong.request.get_raw_path()
-                local startIndex, endIndex = rawPath:find(searchString)
-                local newNamespacePath = rawPath:sub(0, endIndex)
-
-                kongSchemaLocation = externalHostNameUrl .. newNamespacePath .. namespace_name .. "?orig=" ..
-                                         baseOrigLocation
+                if xsdName ~= null then
+                    kong.log.debug("start: ".. xsdName )
+                    kongSchemaLocation = externalHostNameUrl .. rawPath .. "/" .. xsdName .. "?orig=" .. baseOrigLocation
+                else
+                    kongSchemaLocation = externalHostNameUrl .. rawPath .. "?orig=" .. baseOrigLocation
+                end                             
                 kong.log("kongSchemaLocation: " .. kongSchemaLocation)
-            else
-                kongSchemaLocation = externalHostNameUrl .. kong.request.get_raw_path() .. "/namespace/" ..
-                                         namespace_name .. "?orig=" .. baseOrigLocation
+            -- else
+            --     kongSchemaLocation = externalHostNameUrl .. kong.request.get_raw_path() .. "/namespace/" ..
+            --                              namespace_name .. "?orig=" .. baseOrigLocation
 
-                local xsd_soapbind_elements = soapMessage:search("//soapbind:address", namespaces)
-                -- Loop over each <soapbind:address> element
-                for _, xsd_soapbind_element in ipairs(xsd_soapbind_elements) do
-                    local location = xsd_soapbind_element:get_attribute("location")
+            --     local xsd_soapbind_elements = soapMessage:search("//soapbind:address", namespaces)
+            --     -- Loop over each <soapbind:address> element
+            --     for _, xsd_soapbind_element in ipairs(xsd_soapbind_elements) do
+            --         local location = xsd_soapbind_element:get_attribute("location")
 
-                    kong.log.debug("Location: " .. location)
-                    xsd_soapbind_element:set_attribute("location", externalHostNameUrl .. kong.request.get_raw_path())
+            --         kong.log.debug("Location: " .. location)
+            --         xsd_soapbind_element:set_attribute("location", externalHostNameUrl .. kong.request.get_raw_path())
 
-                end
-            end
+            --     end
+            -- end
             -- local kongSchemaLocation = externalHostNameUrl .. kong.request.get_raw_path() .. "/namespace/" .. namespace_name
             xsd_import_element:set_attribute("schemaLocation", kongSchemaLocation)
             -- xsd_import_element:set_attribute("origSchemaLocation", schemaLocation )
@@ -184,7 +212,7 @@ function update_children(conf, entries)
         local res, err = httpc:request_uri("http://localhost:8000/empty", {
             method = "GET",
             headers = {
-                --["accept-encoding"] = "gzip;q=0"
+               -- ["accept-encoding"] = "gzip;q=0"
             },
             query = {},
             keepalive_timeout = 60,
